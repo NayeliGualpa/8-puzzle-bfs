@@ -31,6 +31,8 @@ Aplicación web interactiva para configurar un tablero inicial de 8-Puzzle, vali
              http://127.0.0.1:5000
 
      *  Desde otro dispositivo (celular, tablet u otra PC) conectado a la misma red Wi-Fi:
+              ```bash
             a) Abre una terminal y ejecuta ipconfig.
-             b) Localiza tu Dirección IPv4 en la conexión activa (por ejemplo, 192.168.1.45).
-              C) Entra en el navegador del otro dispositivo a: http://TU_IP_IPV4:5000
+            b) Localiza tu Dirección IPv4 en la conexión activa (por ejemplo, 192.168.1.45).
+            C) Entra en el navegador del otro dispositivo a: http://TU_IP_IPV4:5000
+              ```
