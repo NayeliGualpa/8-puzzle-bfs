@@ -1,0 +1,946 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>8-Puzzle | Búsqueda en Primero en Anchura (BFS)</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Fonts: Inter & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+        },
+      },
+    };
+  </script>
+  <style>
+    /* Transiciones suaves para fichas del visualizador */
+    .tile-card {
+      transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), background-color 0.22s ease, box-shadow 0.22s ease;
+    }
+    @keyframes pulseHighlight {
+      0% { transform: scale(0.94); }
+      50% { transform: scale(1.04); }
+      100% { transform: scale(1); }
+    }
+    .tile-moved {
+      animation: pulseHighlight 0.32s ease-out;
+    }
+    /* Quitar flechas de input number */
+    input[type="number"]::-webkit-inner-spin-button,
+    input[type="number"]::-webkit-outer-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+    input[type="number"] {
+      -moz-appearance: textfield;
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 antialiased min-h-screen flex flex-col">
+
+  <!-- Encabezado -->
+  <header class="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white shadow-lg border-b border-indigo-800/50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      <div>
+        <h1 class="text-2xl sm:text-3xl font-extrabold tracking-tight">
+          8-Puzzle &mdash; Búsqueda en Primero en Anchura (<span class="text-indigo-400">BFS</span>)
+        </h1>
+        <p class="text-slate-300 text-sm mt-1">
+          Configura tu propio tablero inicial 3&times;3, verifica si tiene solución y explora el camino óptimo paso a paso.
+        </p>
+      </div>
+      <div class="flex items-center gap-3 bg-white/10 backdrop-blur-sm border border-white/15 rounded-xl px-4 py-2.5 self-start md:self-center">
+        <div class="text-right">
+          <p class="text-[11px] uppercase tracking-wider text-indigo-200 font-semibold">Algoritmo Activo</p>
+          <p class="text-sm font-bold text-white">Breadth-First Search (FIFO)</p>
+        </div>
+        <div class="w-10 h-10 rounded-lg bg-indigo-500/30 border border-indigo-400/40 flex items-center justify-center font-mono font-bold text-indigo-200">
+          BFS
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Notificación flotante / Mensaje de estado (en lugar de alert) -->
+  <div id="toastBanner" class="hidden fixed bottom-5 right-5 z-50 max-w-md bg-slate-900 text-white px-4 py-3 rounded-xl shadow-2xl border border-slate-700 flex items-center gap-3 transition-all">
+    <span id="toastIcon" class="text-lg">ℹ️</span>
+    <p id="toastText" class="text-sm font-medium"></p>
+  </div>
+
+  <!-- Contenido Principal -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start">
+
+      <!-- COLUMNA IZQUIERDA: Configuración del Tablero Inicial y Estado Meta -->
+      <section class="lg:col-span-5 space-y-6">
+
+        <!-- Tarjeta Editor del Estado Inicial -->
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 sm:p-6">
+          <div class="flex items-center justify-between gap-2 mb-4">
+            <div>
+              <h2 class="text-lg font-bold text-slate-900">1. Configurar Estado Inicial</h2>
+              <p class="text-xs text-slate-500 mt-0.5">
+                Escribe números del <strong>0 al 8</strong> (0 o vacío = hueco <code class="bg-slate-100 px-1 rounded">_</code>) o haz clic en 2 casillas para intercambiarlas.
+              </p>
+            </div>
+          </div>
+
+          <!-- Selector de modo de interacción del tablero inicial -->
+          <div class="flex bg-slate-100 p-1 rounded-xl mb-4 text-xs font-semibold">
+            <button id="modeTypeBtn" type="button" onclick="setEditMode('type')"
+              class="flex-1 py-2 px-3 rounded-lg bg-white text-indigo-700 shadow-sm transition">
+              ✏️ Escribir números
+            </button>
+            <button id="modeSwapBtn" type="button" onclick="setEditMode('swap')"
+              class="flex-1 py-2 px-3 rounded-lg text-slate-600 hover:text-slate-900 transition">
+              🔄 Intercambiar / Deslizar
+            </button>
+          </div>
+
+          <!-- Cuadrícula 3x3 Editable -->
+          <div class="flex flex-col items-center my-4">
+            <div id="initialBoardGrid" class="grid grid-cols-3 gap-2.5 sm:gap-3 bg-slate-800 p-3 sm:p-3.5 rounded-2xl shadow-inner w-full max-w-[270px] aspect-square">
+              <!-- Se genera dinámicamente por JS -->
+            </div>
+            <p id="swapHint" class="hidden text-xs text-indigo-600 font-medium mt-2.5 text-center">
+              Haz clic en una ficha adyacente al hueco para deslizarla, o selecciona dos fichas cualesquiera para intercambiarlas.
+            </p>
+          </div>
+
+          <!-- Botones de Acción Rápida -->
+          <div class="grid grid-cols-3 gap-2 mt-4">
+            <button type="button" onclick="loadDefaultState()"
+              class="py-2.5 px-2.5 bg-slate-100 hover:bg-slate-200 active:scale-[0.99] text-slate-700 font-semibold text-xs rounded-xl border border-slate-200 transition text-center">
+              Por defecto
+            </button>
+            <button type="button" onclick="generateRandomSolvable()"
+              class="py-2.5 px-2.5 bg-indigo-50 hover:bg-indigo-100 active:scale-[0.99] text-indigo-700 font-semibold text-xs rounded-xl border border-indigo-200 transition text-center">
+              🎲 Aleatorio
+            </button>
+            <button type="button" onclick="clearBoardInputs()"
+              class="py-2.5 px-2.5 bg-rose-50 hover:bg-rose-100 active:scale-[0.99] text-rose-700 font-semibold text-xs rounded-xl border border-rose-200 transition text-center">
+              Limpiar
+            </button>
+          </div>
+
+          <!-- Panel de Validación en Tiempo Real -->
+          <div id="validationBox" class="mt-4 rounded-xl p-3.5 border text-sm transition-all">
+            <!-- Actualizado dinámicamente -->
+          </div>
+
+          <!-- Botón Principal: Resolver con BFS -->
+          <button id="solveBtn" type="button" onclick="runBFS()"
+            class="mt-5 w-full py-3.5 px-5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-bold text-base rounded-xl shadow-md shadow-indigo-600/20 active:scale-[0.99] transition flex items-center justify-center gap-2.5">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z" />
+            </svg>
+            <span id="solveBtnText">Resolver con BFS</span>
+          </button>
+        </div>
+
+        <!-- Tarjeta Estado Meta (Referencia fija) -->
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 flex items-center justify-between gap-4">
+          <div>
+            <span class="inline-block text-[11px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full mb-1.5">
+              Objetivo
+            </span>
+            <h3 class="text-base font-bold text-slate-900">Estado Meta (GOAL_STATE)</h3>
+            <p class="text-xs text-slate-500 mt-1">
+              Secuencia: <code class="font-mono text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded">(0, 1, 2, 3, 4, 5, 6, 7, 8)</code>
+            </p>
+            <p class="text-xs text-slate-500 mt-0.5">
+              Inversiones meta: <strong class="text-slate-700">0 (Par)</strong>
+            </p>
+          </div>
+          <!-- Mini cuadrícula 3x3 del Goal State -->
+          <div class="grid grid-cols-3 gap-1.5 bg-slate-800 p-2 rounded-xl w-28 h-28 shrink-0">
+            <div class="rounded-lg bg-slate-700/60 border border-dashed border-slate-500 flex items-center justify-center font-mono text-xs text-slate-400">_</div>
+            <div class="rounded-lg bg-emerald-500 text-white font-bold flex items-center justify-center text-sm shadow-sm">1</div>
+            <div class="rounded-lg bg-emerald-500 text-white font-bold flex items-center justify-center text-sm shadow-sm">2</div>
+            <div class="rounded-lg bg-emerald-500 text-white font-bold flex items-center justify-center text-sm shadow-sm">3</div>
+            <div class="rounded-lg bg-emerald-500 text-white font-bold flex items-center justify-center text-sm shadow-sm">4</div>
+            <div class="rounded-lg bg-emerald-500 text-white font-bold flex items-center justify-center text-sm shadow-sm">5</div>
+            <div class="rounded-lg bg-emerald-500 text-white font-bold flex items-center justify-center text-sm shadow-sm">6</div>
+            <div class="rounded-lg bg-emerald-500 text-white font-bold flex items-center justify-center text-sm shadow-sm">7</div>
+            <div class="rounded-lg bg-emerald-500 text-white font-bold flex items-center justify-center text-sm shadow-sm">8</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- COLUMNA DERECHA: Resultados, Métricas y Visualizador Paso a Paso -->
+      <section class="lg:col-span-7 space-y-6">
+
+        <!-- Tarjetas de Métricas -->
+        <div class="grid grid-cols-2 sm:grid-cols-5 gap-3">
+          <div class="bg-white rounded-2xl border border-slate-200 p-3.5 shadow-sm">
+            <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Resoluble</p>
+            <p id="metricSolvable" class="text-lg font-extrabold text-slate-800 mt-1">—</p>
+          </div>
+          <div class="bg-white rounded-2xl border border-slate-200 p-3.5 shadow-sm">
+            <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Solución</p>
+            <p id="metricFound" class="text-lg font-extrabold text-slate-800 mt-1">—</p>
+          </div>
+          <div class="bg-white rounded-2xl border border-slate-200 p-3.5 shadow-sm">
+            <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Iteraciones</p>
+            <p id="metricIterations" class="text-lg font-extrabold text-indigo-600 font-mono mt-1">—</p>
+          </div>
+          <div class="bg-white rounded-2xl border border-slate-200 p-3.5 shadow-sm">
+            <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Movimientos</p>
+            <p id="metricMoves" class="text-lg font-extrabold text-emerald-600 font-mono mt-1">—</p>
+          </div>
+          <div class="col-span-2 sm:col-span-1 bg-white rounded-2xl border border-slate-200 p-3.5 shadow-sm">
+            <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Tiempo</p>
+            <p id="metricTime" class="text-lg font-extrabold text-slate-800 font-mono mt-1">—</p>
+          </div>
+        </div>
+
+        <!-- Visualizador Animado Paso a Paso -->
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 sm:p-6">
+          <div class="flex flex-wrap items-center justify-between gap-2 pb-4 border-b border-slate-100">
+            <div>
+              <h2 class="text-lg font-bold text-slate-900">2. Visualización Paso a Paso</h2>
+              <p class="text-xs text-slate-500">Explora cada estado del camino óptimo encontrado por BFS.</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <label for="speedSelect" class="text-xs font-semibold text-slate-500">Velocidad:</label>
+              <select id="speedSelect" onchange="updatePlaybackSpeed()"
+                class="text-xs font-semibold bg-slate-100 border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                <option value="1100">Lenta (1.1s)</option>
+                <option value="650" selected>Normal (0.65s)</option>
+                <option value="300">Rápida (0.3s)</option>
+                <option value="120">Muy rápida (0.12s)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Estado vacío antes de resolver -->
+          <div id="emptyVisualizerState" class="py-12 px-4 text-center">
+            <div class="w-16 h-16 mx-auto rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center text-3xl mb-3">
+              🧩
+            </div>
+            <h3 class="text-base font-bold text-slate-800">Listo para buscar la solución</h3>
+            <p class="text-sm text-slate-500 max-w-md mx-auto mt-1">
+              Ajusta el tablero inicial a la izquierda y presiona <strong>"Resolver con BFS"</strong> para ver todos los movimientos necesarios hasta el estado meta.
+            </p>
+          </div>
+
+          <!-- Contenedor Activo del Visualizador -->
+          <div id="activeVisualizer" class="hidden pt-5 space-y-5">
+            <!-- Banner descriptivo del paso actual -->
+            <div class="bg-slate-900 text-white rounded-xl px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+              <div class="font-mono text-xs sm:text-sm font-semibold text-indigo-200" id="stepDescriptionText">
+                Paso 0 | Estado inicial | h(n) = 18
+              </div>
+              <span id="stepBadge" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-500/30 text-indigo-200 border border-indigo-400/30 self-start sm:self-center">
+                0 / 0
+              </span>
+            </div>
+
+            <!-- Tablero Grande de Solución -->
+            <div class="flex flex-col items-center">
+              <div id="solutionBoardGrid" class="grid grid-cols-3 gap-3 bg-slate-800 p-4 rounded-2xl shadow-lg w-full max-w-[300px] aspect-square">
+                <!-- Celdas renderizadas dinámicamente -->
+              </div>
+            </div>
+
+            <!-- Barra deslizadora de pasos -->
+            <div class="space-y-1.5 px-1">
+              <input id="stepSlider" type="range" min="0" max="0" value="0" oninput="goToStep(parseInt(this.value, 10))"
+                class="w-full accent-indigo-600 cursor-pointer h-2 bg-slate-200 rounded-lg" />
+              <div class="flex justify-between text-[11px] font-mono text-slate-400">
+                <span>Inicio (Paso 0)</span>
+                <span id="sliderMaxLabel">Meta (Paso 0)</span>
+              </div>
+            </div>
+
+            <!-- Botones de Reproducción -->
+            <div class="flex flex-wrap items-center justify-center gap-2.5">
+              <button type="button" onclick="goToStep(0)"
+                class="px-3 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs border border-slate-200 transition" title="Ir al inicio">
+                ⏮ Inicio
+              </button>
+              <button id="prevStepBtn" type="button" onclick="prevStep()"
+                class="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 disabled:opacity-40 text-slate-800 font-semibold text-sm border border-slate-200 transition">
+                ◀ Anterior
+              </button>
+              <button id="playPauseBtn" type="button" onclick="togglePlay()"
+                class="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm shadow-sm transition min-w-[140px]">
+                ▶ Reproducir
+              </button>
+              <button id="nextStepBtn" type="button" onclick="nextStep()"
+                class="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 disabled:opacity-40 text-slate-800 font-semibold text-sm border border-slate-200 transition">
+                Siguiente ▶
+              </button>
+              <button type="button" onclick="goToStep(solutionPath.length - 1)"
+                class="px-3 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs border border-slate-200 transition" title="Ir al final">
+                Final ⏭
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Historial Clicable de Pasos -->
+        <div id="historyCard" class="hidden bg-white rounded-2xl shadow-sm border border-slate-200 p-5 sm:p-6">
+          <div class="flex items-center justify-between mb-3">
+            <div>
+              <h3 class="text-base font-bold text-slate-900">3. Secuencia Completa de Movimientos</h3>
+              <p class="text-xs text-slate-500">Haz clic en cualquier paso para inspeccionar su tablero.</p>
+            </div>
+            <span id="historyCountBadge" class="text-xs font-bold bg-indigo-50 text-indigo-700 px-3 py-1 rounded-full border border-indigo-200">
+              0 movimientos
+            </span>
+          </div>
+          <div id="stepsHistoryList" class="max-h-72 overflow-y-auto divide-y divide-slate-100 border border-slate-200 rounded-xl">
+            <!-- Lista generada dinámicamente -->
+          </div>
+        </div>
+
+      </section>
+    </div>
+  </main>
+
+  <footer class="bg-white border-t border-slate-200 py-4 mt-8">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 gap-2">
+      <p>8-Puzzle &bull; Búsqueda en Primero en Anchura (BFS) con verificación de paridad de inversiones</p>
+      <p class="font-mono">GOAL_STATE = (0, 1, 2, 3, 4, 5, 6, 7, 8)</p>
+    </div>
+  </footer>
+
+  <script>
+    // =========================================================================
+    // CONSTANTES Y ESTADO GLOBAL
+    // =========================================================================
+    const GOAL_STATE = [0, 1, 2, 3, 4, 5, 6, 7, 8];
+    const DEFAULT_START_STATE = [7, 2, 4, 5, 0, 6, 8, 3, 1];
+
+    const GOAL_POSITIONS = {};
+    GOAL_STATE.forEach((tile, idx) => {
+      if (tile !== 0) {
+        GOAL_POSITIONS[tile] = [Math.floor(idx / 3), idx % 3];
+      }
+    });
+
+    let editorValues = [...DEFAULT_START_STATE];
+    let editMode = 'type';
+    let selectedSwapIdx = null;
+
+    let solutionPath = [];
+    let solutionSteps = [];
+    let currentStepIdx = 0;
+    let playInterval = null;
+
+    // =========================================================================
+    // UTILIDADES MATEMÁTICAS Y DEL 8-PUZZLE
+    // =========================================================================
+    function countInversions(state) {
+      const tiles = state.filter((x) => x !== 0);
+      let inv = 0;
+      for (let i = 0; i < tiles.length; i++) {
+        for (let j = i + 1; j < tiles.length; j++) {
+          if (tiles[i] > tiles[j]) {
+            inv++;
+          }
+        }
+      }
+      return inv;
+    }
+
+    function isSolvable(state, goal = GOAL_STATE) {
+      return countInversions(state) % 2 === countInversions(goal) % 2;
+    }
+
+    function manhattanDistance(state) {
+      let total = 0;
+      for (let idx = 0; idx < state.length; idx++) {
+        const tile = state[idx];
+        if (tile !== 0) {
+          const row = Math.floor(idx / 3);
+          const col = idx % 3;
+          const [goalRow, goalCol] = GOAL_POSITIONS[tile];
+          total += Math.abs(row - goalRow) + Math.abs(col - goalCol);
+        }
+      }
+      return total;
+    }
+
+    function getNeighbors(state) {
+      const blankIdx = state.indexOf(0);
+      const row = Math.floor(blankIdx / 3);
+      const col = blankIdx % 3;
+      const neighbors = [];
+
+      const directions = [
+        [-1, 0],
+        [1, 0],
+        [0, -1],
+        [0, 1],
+      ];
+
+      for (const [dr, dc] of directions) {
+        const newRow = row + dr;
+        const newCol = col + dc;
+        if (newRow >= 0 && newRow < 3 && newCol >= 0 && newCol < 3) {
+          const newIdx = newRow * 3 + newCol;
+          const next = state.slice();
+          next[blankIdx] = next[newIdx];
+          next[newIdx] = 0;
+          neighbors.push(next);
+        }
+      }
+      return neighbors;
+    }
+
+    function describeMove(prevState, currState) {
+      const prevZero = prevState.indexOf(0);
+      const currZero = currState.indexOf(0);
+      const movedTile = prevState[currZero];
+
+      const pr = Math.floor(prevZero / 3);
+      const pc = prevZero % 3;
+      const cr = Math.floor(currZero / 3);
+      const cc = currZero % 3;
+
+      let direction = '';
+      if (cr < pr) direction = 'abajo';
+      else if (cr > pr) direction = 'arriba';
+      else if (cc < pc) direction = 'derecha';
+      else direction = 'izquierda';
+
+      return `Mover ficha ${movedTile} hacia ${direction}`;
+    }
+
+    function statesEqual(a, b) {
+      for (let i = 0; i < 9; i++) {
+        if (a[i] !== b[i]) return false;
+      }
+      return true;
+    }
+
+    // =========================================================================
+    // EDITOR INTERACTIVO DEL TABLERO INICIAL
+    // =========================================================================
+    function showToast(icon, text) {
+      const banner = document.getElementById('toastBanner');
+      document.getElementById('toastIcon').textContent = icon;
+      document.getElementById('toastText').textContent = text;
+      banner.classList.remove('hidden');
+      clearTimeout(banner._timer);
+      banner._timer = setTimeout(() => {
+        banner.classList.add('hidden');
+      }, 3500);
+    }
+
+    function setEditMode(mode) {
+      editMode = mode;
+      selectedSwapIdx = null;
+      const typeBtn = document.getElementById('modeTypeBtn');
+      const swapBtn = document.getElementById('modeSwapBtn');
+      const swapHint = document.getElementById('swapHint');
+
+      if (mode === 'type') {
+        typeBtn.className = 'flex-1 py-2 px-3 rounded-lg bg-white text-indigo-700 shadow-sm transition';
+        swapBtn.className = 'flex-1 py-2 px-3 rounded-lg text-slate-600 hover:text-slate-900 transition';
+        swapHint.classList.add('hidden');
+      } else {
+        swapBtn.className = 'flex-1 py-2 px-3 rounded-lg bg-white text-indigo-700 shadow-sm transition';
+        typeBtn.className = 'flex-1 py-2 px-3 rounded-lg text-slate-600 hover:text-slate-900 transition';
+        swapHint.classList.remove('hidden');
+      }
+      renderInitialBoard();
+    }
+
+    function renderInitialBoard() {
+      const grid = document.getElementById('initialBoardGrid');
+      grid.innerHTML = '';
+
+      for (let i = 0; i < 9; i++) {
+        const val = editorValues[i];
+        const isBlank = val === 0 || val === '';
+
+        if (editMode === 'type') {
+          const input = document.createElement('input');
+          input.type = 'text';
+          input.inputMode = 'numeric';
+          input.maxLength = 1;
+          input.value = val === '' || val === 0 ? '' : String(val);
+          input.placeholder = '_';
+          input.setAttribute('aria-label', `Celda ${i + 1}`);
+          input.className = `w-full h-full rounded-xl text-center font-extrabold text-2xl sm:text-3xl focus:outline-none focus:ring-4 focus:ring-indigo-400 transition ${
+            isBlank
+              ? 'bg-slate-700/70 text-slate-300 border-2 border-dashed border-slate-500 placeholder-slate-400'
+              : 'bg-white text-slate-900 shadow-md border-2 border-transparent'
+          }`;
+
+          input.addEventListener('focus', () => input.select());
+          input.addEventListener('input', (e) => {
+            const raw = e.target.value.trim();
+            if (raw === '') {
+              editorValues[i] = '';
+            } else if (/^[0-8]$/.test(raw)) {
+              const num = parseInt(raw, 10);
+              editorValues[i] = num;
+              const nextInput = grid.children[i + 1];
+              if (nextInput) nextInput.focus();
+            } else {
+              e.target.value = editorValues[i] === 0 || editorValues[i] === '' ? '' : String(editorValues[i]);
+            }
+            updateCellStyle(input, editorValues[i]);
+            validateBoard();
+          });
+
+          grid.appendChild(input);
+        } else {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          const isSelected = selectedSwapIdx === i;
+          btn.textContent = isBlank ? '_' : String(val);
+          btn.className = `w-full h-full rounded-xl font-extrabold text-2xl sm:text-3xl flex items-center justify-center transition select-none ${
+            isBlank
+              ? 'bg-slate-700/70 text-slate-400 border-2 border-dashed border-slate-500 font-mono'
+              : isSelected
+              ? 'bg-amber-400 text-slate-950 ring-4 ring-amber-300 scale-105 shadow-lg'
+              : 'bg-white hover:bg-indigo-50 text-slate-900 shadow-md cursor-pointer'
+          }`;
+
+          btn.addEventListener('click', () => handleSwapClick(i));
+          grid.appendChild(btn);
+        }
+      }
+
+      validateBoard();
+    }
+
+    function updateCellStyle(input, val) {
+      const isBlank = val === 0 || val === '';
+      input.className = `w-full h-full rounded-xl text-center font-extrabold text-2xl sm:text-3xl focus:outline-none focus:ring-4 focus:ring-indigo-400 transition ${
+        isBlank
+          ? 'bg-slate-700/70 text-slate-300 border-2 border-dashed border-slate-500 placeholder-slate-400'
+          : 'bg-white text-slate-900 shadow-md border-2 border-transparent'
+      }`;
+    }
+
+    function handleSwapClick(idx) {
+      const normalized = editorValues.map((v) => (v === '' ? 0 : Number(v)));
+      const blankIdx = normalized.indexOf(0);
+
+      if (selectedSwapIdx === null && blankIdx !== -1 && normalized.filter((x) => x === 0).length === 1 && idx !== blankIdx) {
+        const r1 = Math.floor(idx / 3), c1 = idx % 3;
+        const r2 = Math.floor(blankIdx / 3), c2 = blankIdx % 3;
+        if (Math.abs(r1 - r2) + Math.abs(c1 - c2) === 1) {
+          [normalized[idx], normalized[blankIdx]] = [normalized[blankIdx], normalized[idx]];
+          editorValues = normalized;
+          renderInitialBoard();
+          return;
+        }
+      }
+
+      if (selectedSwapIdx === null) {
+        selectedSwapIdx = idx;
+        renderInitialBoard();
+      } else if (selectedSwapIdx === idx) {
+        selectedSwapIdx = null;
+        renderInitialBoard();
+      } else {
+        const temp = editorValues[selectedSwapIdx];
+        editorValues[selectedSwapIdx] = editorValues[idx];
+        editorValues[idx] = temp;
+        selectedSwapIdx = null;
+        renderInitialBoard();
+      }
+    }
+
+    function loadDefaultState() {
+      stopPlayback();
+      editorValues = [...DEFAULT_START_STATE];
+      selectedSwapIdx = null;
+      renderInitialBoard();
+      showToast('📌', 'Estado inicial por defecto cargado: (7, 2, 4, 5, 0, 6, 8, 3, 1)');
+    }
+
+    function clearBoardInputs() {
+      stopPlayback();
+      editorValues = ['', '', '', '', '', '', '', '', ''];
+      selectedSwapIdx = null;
+      setEditMode('type');
+      const firstInput = document.getElementById('initialBoardGrid').children[0];
+      if (firstInput) firstInput.focus();
+    }
+
+    function generateRandomSolvable() {
+      stopPlayback();
+      let s = [...GOAL_STATE];
+      let prev = null;
+      const steps = 8 + Math.floor(Math.random() * 11);
+
+      for (let i = 0; i < steps; i++) {
+        const neighbors = getNeighbors(s).filter((n) => !prev || !statesEqual(n, prev));
+        const nxt = neighbors[Math.floor(Math.random() * neighbors.length)];
+        prev = s;
+        s = nxt;
+      }
+
+      editorValues = s;
+      selectedSwapIdx = null;
+      renderInitialBoard();
+      showToast('🎲', `Tablero aleatorio resoluble generado (h(n) = ${manhattanDistance(s)}).`);
+    }
+
+    function getParsedBoard() {
+      const nums = [];
+      let emptyCount = 0;
+
+      for (let i = 0; i < 9; i++) {
+        const v = editorValues[i];
+        if (v === '' || v === null || v === undefined) {
+          emptyCount++;
+          nums.push(0);
+        } else {
+          nums.push(Number(v));
+        }
+      }
+
+      if (emptyCount > 1) {
+        return { valid: false, reason: `Faltan ${emptyCount} casillas por completar (debe haber solo un espacio vacío).` };
+      }
+
+      const seen = new Set();
+      const duplicates = new Set();
+      for (const n of nums) {
+        if (Number.isNaN(n) || n < 0 || n > 8) {
+          return { valid: false, reason: 'Solo se permiten números enteros del 0 al 8.' };
+        }
+        if (seen.has(n)) duplicates.add(n);
+        seen.add(n);
+      }
+
+      if (duplicates.size > 0) {
+        const dupList = Array.from(duplicates).map((d) => (d === 0 ? '0 (vacío)' : d)).join(', ');
+        return { valid: false, reason: `Números repetidos: ${dupList}. Deben estar del 0 al 8 sin repetir.` };
+      }
+
+      return { valid: true, state: nums };
+    }
+
+    function validateBoard() {
+      const box = document.getElementById('validationBox');
+      const solveBtn = document.getElementById('solveBtn');
+      const parsed = getParsedBoard();
+
+      if (!parsed.valid) {
+        box.className = 'mt-4 rounded-xl p-3.5 border border-amber-200 bg-amber-50 text-amber-900 text-xs';
+        box.innerHTML = `
+          <div class="flex items-start gap-2">
+            <span class="text-base leading-none">⚠️</span>
+            <div>
+              <p class="font-bold">Tablero incompleto o inválido</p>
+              <p class="mt-0.5 text-amber-800">${parsed.reason}</p>
+            </div>
+          </div>
+        `;
+        solveBtn.disabled = true;
+        return null;
+      }
+
+      const state = parsed.state;
+      const inv = countInversions(state);
+      const solvable = isSolvable(state, GOAL_STATE);
+      const hVal = manhattanDistance(state);
+
+      if (solvable) {
+        box.className = 'mt-4 rounded-xl p-3.5 border border-emerald-200 bg-emerald-50 text-emerald-900 text-xs';
+        box.innerHTML = `
+          <div class="flex items-start gap-2">
+            <span class="text-base leading-none">✅</span>
+            <div>
+              <p class="font-bold">Estado inicial válido y resoluble</p>
+              <p class="mt-0.5 text-emerald-800">
+                Inversiones: <strong>${inv}</strong> (par, igual que la meta) &bull; Distancia Manhattan inicial: <strong>h(n) = ${hVal}</strong>
+              </p>
+            </div>
+          </div>
+        `;
+        solveBtn.disabled = false;
+      } else {
+        box.className = 'mt-4 rounded-xl p-3.5 border border-rose-200 bg-rose-50 text-rose-900 text-xs';
+        box.innerHTML = `
+          <div class="flex items-start gap-2">
+            <span class="text-base leading-none">🚫</span>
+            <div>
+              <p class="font-bold">Estado NO resoluble hacia GOAL_STATE</p>
+              <p class="mt-0.5 text-rose-800">
+                Tiene <strong>${inv} inversiones</strong> (impar), mientras que el estado meta tiene <strong>0 inversiones</strong> (par). Pertenece a la mitad inalcanzable del espacio de estados.
+              </p>
+            </div>
+          </div>
+        `;
+        solveBtn.disabled = true;
+      }
+
+      return { state, solvable };
+    }
+
+    // =========================================================================
+    // EJECUCIÓN DE BFS VÍA PYTHON (FLASK /api/solve)
+    // =========================================================================
+    async function runBFS() {
+      const validation = validateBoard();
+      if (!validation || !validation.solvable) {
+        showToast('🚫', 'El tablero actual no es resoluble hacia el estado meta.');
+        return;
+      }
+
+      stopPlayback();
+      const solveBtn = document.getElementById('solveBtn');
+      const solveBtnText = document.getElementById('solveBtnText');
+      solveBtn.disabled = true;
+      solveBtnText.textContent = 'Buscando con BFS (Python)...';
+
+      const t0 = performance.now();
+      try {
+        const resp = await fetch('/api/solve', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ state: validation.state }),
+        });
+
+        if (!resp.ok) {
+          const errData = await resp.json().catch(() => ({}));
+          throw new Error(errData.error || `Error HTTP ${resp.status}`);
+        }
+
+        const result = await resp.json();
+        const elapsedMs = (performance.now() - t0).toFixed(2);
+
+        if (!result.solvable) {
+          document.getElementById('metricSolvable').textContent = 'No';
+          document.getElementById('metricSolvable').className = 'text-lg font-extrabold text-rose-600 mt-1';
+          showToast('🚫', result.message || 'El tablero no tiene solución.');
+          return;
+        }
+
+        document.getElementById('metricSolvable').textContent = 'Sí';
+        document.getElementById('metricSolvable').className = 'text-lg font-extrabold text-emerald-600 mt-1';
+
+        document.getElementById('metricFound').textContent = result.found ? 'Sí' : 'No';
+        document.getElementById('metricFound').className = `text-lg font-extrabold mt-1 ${
+          result.found ? 'text-emerald-600' : 'text-rose-600'
+        }`;
+
+        document.getElementById('metricIterations').textContent = Number(result.iterations).toLocaleString('es-EC');
+        document.getElementById('metricMoves').textContent = result.found ? String(result.path.length - 1) : '—';
+        document.getElementById('metricTime').textContent = `${elapsedMs} ms`;
+
+        if (result.found) {
+          solutionPath = result.path;
+          solutionSteps = result.steps || [];
+          currentStepIdx = 0;
+
+          document.getElementById('emptyVisualizerState').classList.add('hidden');
+          document.getElementById('activeVisualizer').classList.remove('hidden');
+          document.getElementById('historyCard').classList.remove('hidden');
+
+          const totalMoves = solutionPath.length - 1;
+          const slider = document.getElementById('stepSlider');
+          slider.max = String(totalMoves);
+          slider.value = '0';
+          document.getElementById('sliderMaxLabel').textContent = `Meta (Paso ${totalMoves})`;
+          document.getElementById('historyCountBadge').textContent = `${totalMoves} movimiento${totalMoves === 1 ? '' : 's'}`;
+
+          renderStepsHistory();
+          goToStep(0);
+          showToast('🎉', `¡Solución encontrada en ${totalMoves} movimientos (${Number(result.iterations).toLocaleString('es-EC')} iteraciones)!`);
+        }
+      } catch (err) {
+        console.error(err);
+        showToast('⚠️', `Error al conectar con app.py en Python: ${err.message}`);
+      } finally {
+        solveBtn.disabled = false;
+        solveBtnText.textContent = 'Resolver con BFS';
+      }
+    }
+
+    // =========================================================================
+    // VISUALIZADOR PASO A PASO Y CONTROLES DE REPRODUCCIÓN
+    // =========================================================================
+    function goToStep(stepIdx) {
+      if (!solutionPath.length) return;
+      const clamped = Math.max(0, Math.min(stepIdx, solutionPath.length - 1));
+      currentStepIdx = clamped;
+
+      const state = solutionPath[clamped];
+      const prevState = clamped > 0 ? solutionPath[clamped - 1] : null;
+      const totalMoves = solutionPath.length - 1;
+      const stepInfo = solutionSteps[clamped];
+      const hVal = stepInfo && typeof stepInfo.h === 'number' ? stepInfo.h : manhattanDistance(state);
+
+      let movedTile = null;
+      if (prevState) {
+        const currZero = state.indexOf(0);
+        movedTile = prevState[currZero];
+      }
+
+      const actionText =
+        stepInfo && stepInfo.action
+          ? stepInfo.action
+          : clamped === 0
+          ? 'Estado inicial'
+          : describeMove(prevState, state);
+
+      document.getElementById('stepDescriptionText').textContent = `Paso ${clamped} | ${actionText} | h(n) = ${hVal}`;
+      document.getElementById('stepBadge').textContent = `Paso ${clamped} / ${totalMoves}`;
+
+      document.getElementById('stepSlider').value = String(clamped);
+      document.getElementById('prevStepBtn').disabled = clamped === 0;
+      document.getElementById('nextStepBtn').disabled = clamped === totalMoves;
+
+      const grid = document.getElementById('solutionBoardGrid');
+      grid.innerHTML = '';
+
+      for (let i = 0; i < 9; i++) {
+        const tile = state[i];
+        const cell = document.createElement('div');
+        const isBlank = tile === 0;
+        const isGoalPos = !isBlank && GOAL_STATE[i] === tile;
+        const justMoved = !isBlank && tile === movedTile;
+
+        if (isBlank) {
+          cell.className = 'tile-card rounded-xl bg-slate-700/60 border-2 border-dashed border-slate-500 flex items-center justify-center font-mono text-2xl text-slate-400 select-none';
+          cell.textContent = '_';
+        } else {
+          let colorClasses = 'bg-white text-slate-900 border-2 border-slate-200';
+          if (justMoved) {
+            colorClasses = 'bg-indigo-600 text-white border-2 border-indigo-300 ring-4 ring-indigo-400/40 tile-moved';
+          } else if (isGoalPos) {
+            colorClasses = 'bg-emerald-500 text-white border-2 border-emerald-400';
+          }
+
+          cell.className = `tile-card rounded-xl font-extrabold text-3xl sm:text-4xl flex items-center justify-center shadow-md select-none ${colorClasses}`;
+          cell.textContent = String(tile);
+        }
+
+        grid.appendChild(cell);
+      }
+
+      highlightHistoryRow(clamped);
+    }
+
+    function prevStep() {
+      stopPlayback();
+      if (currentStepIdx > 0) {
+        goToStep(currentStepIdx - 1);
+      }
+    }
+
+    function nextStep() {
+      if (currentStepIdx < solutionPath.length - 1) {
+        goToStep(currentStepIdx + 1);
+      } else {
+        stopPlayback();
+      }
+    }
+
+    function togglePlay() {
+      if (playInterval) {
+        stopPlayback();
+      } else {
+        if (currentStepIdx >= solutionPath.length - 1) {
+          goToStep(0);
+        }
+        const speed = parseInt(document.getElementById('speedSelect').value, 10);
+        document.getElementById('playPauseBtn').textContent = '⏸ Pausar';
+        playInterval = setInterval(() => {
+          if (currentStepIdx < solutionPath.length - 1) {
+            goToStep(currentStepIdx + 1);
+          } else {
+            stopPlayback();
+          }
+        }, speed);
+      }
+    }
+
+    function stopPlayback() {
+      if (playInterval) {
+        clearInterval(playInterval);
+        playInterval = null;
+      }
+      const btn = document.getElementById('playPauseBtn');
+      if (btn) btn.textContent = '▶ Reproducir';
+    }
+
+    function updatePlaybackSpeed() {
+      if (playInterval) {
+        stopPlayback();
+        togglePlay();
+      }
+    }
+
+    function renderStepsHistory() {
+      const list = document.getElementById('stepsHistoryList');
+      list.innerHTML = '';
+
+      solutionPath.forEach((state, idx) => {
+        const stepInfo = solutionSteps[idx];
+        const hVal = stepInfo && typeof stepInfo.h === 'number' ? stepInfo.h : manhattanDistance(state);
+        const action =
+          stepInfo && stepInfo.action
+            ? stepInfo.action
+            : idx === 0
+            ? 'Estado inicial'
+            : describeMove(solutionPath[idx - 1], state);
+        const boardInline = state.map((x) => (x === 0 ? '_' : x)).join(' ');
+
+        const row = document.createElement('button');
+        row.type = 'button';
+        row.id = `history-row-${idx}`;
+        row.onclick = () => {
+          stopPlayback();
+          goToStep(idx);
+        };
+        row.className = 'w-full text-left px-4 py-2.5 flex items-center justify-between gap-3 hover:bg-indigo-50/70 transition text-xs sm:text-sm';
+        row.innerHTML = `
+          <div class="flex items-center gap-2.5 min-w-0">
+            <span class="font-mono font-bold text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-700 shrink-0">
+              Paso ${idx}
+            </span>
+            <span class="font-medium text-slate-800 truncate">${action}</span>
+          </div>
+          <div class="flex items-center gap-3 shrink-0 font-mono text-xs">
+            <span class="hidden sm:inline text-slate-400">[${boardInline}]</span>
+            <span class="text-indigo-600 font-semibold">h=${hVal}</span>
+          </div>
+        `;
+        list.appendChild(row);
+      });
+    }
+
+    function highlightHistoryRow(idx) {
+      const list = document.getElementById('stepsHistoryList');
+      if (!list) return;
+      for (let i = 0; i < solutionPath.length; i++) {
+        const el = document.getElementById(`history-row-${i}`);
+        if (!el) continue;
+        if (i === idx) {
+          el.classList.add('bg-indigo-50', 'border-l-4', 'border-l-indigo-600');
+          el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        } else {
+          el.classList.remove('bg-indigo-50', 'border-l-4', 'border-l-indigo-600');
+        }
+      }
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      renderInitialBoard();
+    });
+  </script>
+</body>
+</html>
