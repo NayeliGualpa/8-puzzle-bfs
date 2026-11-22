@@ -15,4 +15,5 @@ Aplicación web interactiva para configurar un tablero inicial de 8-Puzzle, vali
       http://127.0.0.1:5000
 
    Si se quiere conectar desde otro dispositivo debe estar conectado a la misma red WI-FI y usar http://TU_IP_IPV4:5000
+   Como se consigue el ip de la computadora colocando el comando ipconfig en la terminal
 
